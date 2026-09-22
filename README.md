@@ -41,6 +41,12 @@ The API runs on port 3000 and the web app on port 5173. Visit `http://localhost:
 
 `pnpm build`, `pnpm lint`, `pnpm test`, and `pnpm typecheck` run workspace checks.
 
+## Authentication and tenancy
+
+Authentication uses an HTTP-only, SameSite cookie containing a short-lived JWT whose payload identifies only the user. PostgreSQL is the system of record. A global User can have many Membership records, each connecting it to a Tenant with an OWNER, ADMIN, or MEMBER role. Tenant-scoped requests send `X-Tenant-Id`; the API validates the UUID and verifies membership server-side before exposing tenant context.
+
+The current UI provides `/register`, `/login`, and `/dashboard`, including tenant selection and logout.
+
 ## Current status
 
-Bootstrap only: health integration, Prisma foundation, and local PostgreSQL. Business modules, authentication, tenants, Redis, queues, and AI features are intentionally not implemented.
+The initial tenant-aware authentication foundation is implemented. Products, inventory, sales, Redis, queues, and AI features are intentionally not implemented.

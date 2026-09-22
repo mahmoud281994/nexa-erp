@@ -1,11 +1,10 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
-function App() {
-  const health = useQuery({ queryKey: ['health'], queryFn: async () => (await fetch(`${apiUrl}/health`)).json() });
-  return <main><h1>Nexa ERP</h1><p>AI-powered business operating system</p><p>API status: {health.isLoading ? 'checking…' : health.data?.status === 'ok' ? 'online' : 'unavailable'}</p></main>;
-}
+import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query';
+const api = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
+const request = async (path: string, options: RequestInit = {}) => { const r = await fetch(`${api}${path}`, { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } }); if (!r.ok) throw new Error('Request failed'); return r.json(); };
+function Form({ mode }: { mode: 'login' | 'register' }) { const nav = useNavigate(); const [error, setError] = useState(''); const mutation = useMutation({ mutationFn: (body: object) => request(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(body) }), onSuccess: () => nav('/dashboard') }); return <main><h1>Nexa ERP</h1><h2>{mode}</h2><form onSubmit={async e => { e.preventDefault(); const f = new FormData(e.currentTarget); try { await mutation.mutateAsync(Object.fromEntries(f)); } catch { setError('Unable to authenticate'); } }}><input name="email" type="email" placeholder="Email" required /><input name="password" type="password" minLength={8} placeholder="Password" required />{mode === 'register' && <><input name="name" placeholder="Name" required /><input name="companyName" placeholder="Company name" required /></>}<button>{mode}</button></form>{error && <p>{error}</p>}<Link to={mode === 'login' ? '/register' : '/login'}>{mode === 'login' ? 'Register' : 'Login'}</Link></main>; }
+function Dashboard() { const nav = useNavigate(); const me = useQuery({ queryKey: ['me'], queryFn: () => request('/auth/me'), retry: false }); const tenants = useQuery({ queryKey: ['tenants'], queryFn: () => request('/tenants'), retry: false }); const [active, setActive] = useState(''); useEffect(() => { if (!active && tenants.data?.length === 1) setActive(tenants.data[0].id); }, [tenants.data, active]); const context = useQuery({ queryKey: ['tenant-context', active], queryFn: () => request('/tenant-context', { headers: { 'X-Tenant-Id': active } }), enabled: Boolean(active) }); if (me.isError) return <Navigate to="/login" />; return <main><h1>Dashboard</h1><p>{me.data?.name} ({me.data?.email})</p><select value={active} onChange={e => setActive(e.target.value)}>{tenants.data?.map((t: any) => <option key={t.id} value={t.id}>{t.name} — {t.role}</option>)}</select><p>{context.data ? `Active role: ${context.data.membership.role}` : 'Select a tenant'}</p><button onClick={async () => { await request('/auth/logout', { method: 'POST' }); nav('/login'); }}>Logout</button></main>; }
+function App() { return <Routes><Route path="/register" element={<Form mode="register" />} /><Route path="/login" element={<Form mode="login" />} /><Route path="/dashboard" element={<Dashboard />} /><Route path="*" element={<Navigate to="/dashboard" />} /></Routes>; }
 createRoot(document.getElementById('root')!).render(<StrictMode><QueryClientProvider client={new QueryClient()}><BrowserRouter><App /></BrowserRouter></QueryClientProvider></StrictMode>);
