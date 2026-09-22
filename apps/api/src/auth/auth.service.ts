@@ -13,12 +13,25 @@ export class AuthService {
   async register(dto: RegisterDto) {
     const email = dto.email.trim().toLowerCase();
     try {
-      const result = await this.prisma.$transaction(async tx => {
-        const user = await tx.user.create({ data: { name: dto.name.trim(), email, passwordHash: await argon2.hash(dto.password) } });
-        const base = slugify(dto.companyName); let slug = base;
-        for (let n = 2; n < 100; n++) { try { const tenant = await tx.tenant.create({ data: { name: dto.companyName.trim(), slug } }); const membership = await tx.membership.create({ data: { userId: user.id, tenantId: tenant.id, role: 'OWNER' } }); return { user, tenant, membership }; } catch (e) { if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') throw e; slug = `${base}-${n}`; } }
-        throw new ConflictException('Unable to allocate tenant slug');
-      });
+      const base = slugify(dto.companyName);
+      let result: any;
+      for (let n = 1; n < 100; n++) {
+        const slug = n === 1 ? base : `${base}-${n}`;
+        try {
+          result = await this.prisma.$transaction(async tx => {
+            const user = await tx.user.create({ data: { name: dto.name.trim(), email, passwordHash: await argon2.hash(dto.password) } });
+            const tenant = await tx.tenant.create({ data: { name: dto.companyName.trim(), slug } });
+            const membership = await tx.membership.create({ data: { userId: user.id, tenantId: tenant.id, role: 'OWNER' } });
+            return { user, tenant, membership };
+          });
+          break;
+        } catch (e) {
+          const target = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' ? e.meta?.target : undefined;
+          if (Array.isArray(target) && target.includes('slug')) continue;
+          throw e;
+        }
+      }
+      if (!result) throw new ConflictException('Unable to allocate tenant slug');
       return { user: { id: result.user.id, name: result.user.name, email: result.user.email }, token: this.token(result.user.id) };
     } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException('Email is already registered'); throw e; }
   }
